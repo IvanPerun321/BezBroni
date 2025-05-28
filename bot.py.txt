@@ -1,0 +1,114 @@
+from telegram import Update, ReplyKeyboardMarkup
+from telegram.ext import (
+    ApplicationBuilder, CommandHandler, MessageHandler, filters,
+    ContextTypes, ConversationHandler
+)
+import os
+
+# Стани
+NAME, AGE, JOB, REASON, TIME, TELEGRAM = range(6)
+
+ADMIN_ID = int(os.getenv("ADMIN_ID", 0))  # Твій Telegram user ID для отримання заявок
+
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text(
+        "Привіт. Ти потрапив у “Без броні” — простір для чоловіків, які хочуть говорити чесно.\n\n"
+        "Це не терапія. Не мотиваційний канал. Це — живий контакт.\n"
+        "Ми запускаємо перше чоловіче коло онлайн — і ти можеш приєднатись.\n\n"
+        "Як тебе звати?"
+    )
+    return NAME
+
+async def get_name(update, context):
+    context.user_data["name"] = update.message.text
+    await update.message.reply_text("Скільки тобі років?")
+    return AGE
+
+async def get_age(update, context):
+    context.user_data["age"] = update.message.text
+    await update.message.reply_text("Чим займаєшся? (професія/сфера/роль)")
+    return JOB
+
+async def get_job(update, context):
+    context.user_data["job"] = update.message.text
+    await update.message.reply_text("Чому хочеш приєднатись до чоловічого кола?")
+    return REASON
+
+async def get_reason(update, context):
+    context.user_data["reason"] = update.message.text
+    reply_keyboard = [["Вечір будніх", "Вихідні вдень"], ["Вихідні ввечері", "Інше"]]
+    await update.message.reply_text(
+        "Коли тобі зручно приєднуватись? Обери варіант:",
+        reply_markup=ReplyKeyboardMarkup(reply_keyboard, one_time_keyboard=True)
+    )
+    return TIME
+
+async def get_time(update, context):
+    context.user_data["time"] = update.message.text
+    await update.message.reply_text("Напиши свій Telegram нік (@...)")
+    return TELEGRAM
+
+async def get_telegram(update, context):
+    context.user_data["telegram"] = update.message.text
+    info = context.user_data
+    summary = (
+        f"Нова заявка у «Без броні»:\n\n"
+        f"👤 Ім’я: {info['name']}\n"
+        f"📅 Вік: {info['age']}\n"
+        f"💼 Зайнятість: {info['job']}\n"
+        f"🗣 Причина: {info['reason']}\n"
+        f"⏰ Зручний час: {info['time']}\n"
+        f"📱 Telegram: {info['telegram']}"
+    )
+    if ADMIN_ID:
+        await context.bot.send_message(chat_id=ADMIN_ID, text=summary)
+    await update.message.reply_text("Дякую. Ми на зв'язку. Ти не один.")
+    return ConversationHandler.END
+
+async def cancel(update, context):
+    await update.message.reply_text("Розмова скасована. Якщо хочеш — почни спочатку /start")
+    return ConversationHandler.END
+
+# Адмін-команди
+
+async def admin_broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != ADMIN_ID:
+        await update.message.reply_text("У тебе немає прав для цієї команди.")
+        return
+    text = " ".join(context.args)
+    if not text:
+        await update.message.reply_text("Використання: /broadcast текст_повідомлення")
+        return
+    # Надіслати повідомлення всім користувачам — тут треба додаткову логіку, наприклад, базу
+    await update.message.reply_text(f"Повідомлення надіслано: {text}")
+
+async def main():
+    token = os.getenv("BOT_TOKEN")
+    if not token:
+        print("Error: BOT_TOKEN not set")
+        return
+
+    app = ApplicationBuilder().token(token).build()
+
+    conv_handler = ConversationHandler(
+        entry_points=[CommandHandler("start", start)],
+        states={
+            NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_name)],
+            AGE: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_age)],
+            JOB: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_job)],
+            REASON: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_reason)],
+            TIME: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_time)],
+            TELEGRAM: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_telegram)],
+        },
+        fallbacks=[CommandHandler("cancel", cancel)],
+    )
+
+    app.add_handler(conv_handler)
+    app.add_handler(CommandHandler("broadcast", admin_broadcast))
+
+    print("Бот запущений...")
+    await app.run_polling()
+
+if __name__ == "__main__":
+    import asyncio
+    asyncio.run(main())
